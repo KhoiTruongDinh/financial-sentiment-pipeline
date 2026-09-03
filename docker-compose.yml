@@ -1,0 +1,164 @@
+version: '3.8'
+
+x-airflow-common:
+  &airflow-common
+  build: .
+  image: my-custom-airflow:2.8.1
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB_AIRFLOW}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    
+    OPENAI_API_KEY: ${OPENAI_API_KEY}
+    GROQ_API_KEY: ${GROQ_API_KEY}
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    MONGO_HOST: ${MONGO_HOST}
+    MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+    MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    #_PIP_ADDITIONAL_REQUIREMENTS: "pymongo psycopg2-binary requests beautifulsoup4 pydantic"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./config:/opt/airflow/config
+    - ./plugins:/opt/airflow/plugins
+    - ./scripts:/opt/airflow/scripts
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  # ==========================================
+  # 1. DATABASE LAYER: PostgreSQL & MongoDB
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: sentiment_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB_AIRFLOW}
+      POSTGRES_DB_DWH: ${POSTGRES_DB_DWH}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB_AIRFLOW}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  mongodb:
+    image: mongo:6.0
+    container_name: sentiment_mongodb
+    ports:
+      - "${MONGO_PORT}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_HOST: ${MONGO_HOST}
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: sentiment_mongo_express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_SERVER: ${MONGO_HOST}
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    depends_on:
+      - mongodb
+    restart: always
+
+  # ==========================================
+  # 2. PROCESSING LAYER: Apache Spark
+  # ==========================================
+  spark:
+    image: jupyter/pyspark-notebook:latest
+    container_name: sentiment_spark
+    ports:
+      - "8888:8888"
+      - "4040:4040"
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
+    volumes:
+      - ./spark_jobs:/home/jovyan/work
+    restart: always
+
+  # ==========================================
+  # 3. ORCHESTRATION LAYER: Apache Airflow
+  # ==========================================
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow_init
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+    user: "0:0"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./config:/opt/airflow/config
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow_webserver
+    command: webserver
+    ports:
+      - "${AIRFLOW_WEBSERVER_PORT}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow_scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
+  mongo_data:
+
+
+
+## Note: To run the entire stack, use the following command:
+# docker-compose up -d
+# docker-compose down -v  # To stop and remove containers, networks, and volumes
+# docker-compose logs -f  # To view logs of all services
+# docker-compose logs -f <service_name>  # To view logs of a specific service
+# docker exec -it airflow_webserver bash  # To access the Airflow webserver container

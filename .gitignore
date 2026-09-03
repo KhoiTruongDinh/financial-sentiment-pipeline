@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+
+
+# Airflow / Spark logs & temp files
+logs/
+*.pyc
+__pycache__/
+.idea/
+.vscode/

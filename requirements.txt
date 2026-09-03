@@ -1,0 +1,8 @@
+pymongo
+psycopg2-binary
+requests
+beautifulsoup4
+pydantic
+openai
+groq
+google-generativeai

@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+TARGET_DB="${POSTGRES_DB_DWH:-financial_dwh}"
+TARGET_USER="${POSTGRES_USER:-my_dwh_user}"
+
+psql -v ON_ERROR_STOP=1 --username "$TARGET_USER" --dbname "${POSTGRES_DB:-airflow}" <<-EOSQL
+    CREATE DATABASE $TARGET_DB;
+    GRANT ALL PRIVILEGES ON DATABASE $TARGET_DB TO $TARGET_USER;
+EOSQL
