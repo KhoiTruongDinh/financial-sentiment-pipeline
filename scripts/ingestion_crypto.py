@@ -68,3 +68,5 @@ if __name__ == "__main__":
     fetch_crypto_prices()
 
 
+# # docker exec -it airflow_webserver python /opt/airflow/scripts/ingestion_crypto.py
+

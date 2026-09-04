@@ -15,6 +15,8 @@ x-airflow-common:
     
     OPENAI_API_KEY: ${OPENAI_API_KEY}
     GROQ_API_KEY: ${GROQ_API_KEY}
+    LLM_BASE_URL: ${LLM_BASE_URL}
+    LLM_MODEL_NAME: ${LLM_MODEL_NAME}
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
     TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
     MONGO_HOST: ${MONGO_HOST}
@@ -162,3 +164,4 @@ volumes:
 # docker-compose logs -f  # To view logs of all services
 # docker-compose logs -f <service_name>  # To view logs of a specific service
 # docker exec -it airflow_webserver bash  # To access the Airflow webserver container
+# docker compose build 

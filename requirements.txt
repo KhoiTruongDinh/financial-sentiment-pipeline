@@ -3,6 +3,7 @@ psycopg2-binary
 requests
 beautifulsoup4
 pydantic
-openai
+openai>=1.14.0
 groq
 google-generativeai
+aiohttp>=3.12
